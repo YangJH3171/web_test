@@ -3,97 +3,107 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenLayers Map Search</title>
+    <title>웹페이지 서비스 테스트</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v10.3.1/ol.css">
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-
-        /* 지도가 화면 전체를 채우도록 설정 */
-        #map {
-            width: 100%;
-            height: 100vh;
-        }
-
-        /* 검색창 컨테이너 (상단 중앙 정렬) */
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+        #map { width: 100%; height: 100vh; }
         .search-container {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%); /* 정확한 중앙 정렬을 위한 설정 */
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            display: flex;
-            gap: 5px;
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; background: white; padding: 10px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2); display: flex; gap: 5px;
         }
-
-        .search-input {
-            width: 250px; /* 중앙 배치를 위해 너비를 살짝 넓혔습니다 */
-            padding: 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            outline: none;
-        }
-
-        .search-button {
-            padding: 8px 15px;
-            background-color: #4A90E2;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-        .search-button:hover {
-            background-color: #357ABD;
-        }
+        .search-input { width: 250px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; outline: none; }
+        .search-button { padding: 8px 15px; background-color: #4A90E2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .search-button:hover { background-color: #357ABD; }
     </style>
 </head>
 <body>
 
     <div class="search-container">
-        <input type="text" class="search-input" id="keyword" placeholder="장소 검색...">
-        <button class="search-button" onclick="searchAlert()">검색</button>
+        <input type="text" class="search-input" id="keyword" placeholder="장소 검색..." onkeypress="if(event.keyCode==13) {searchLocation();}">
+        <button class="search-button" onclick="searchLocation()">검색</button>
     </div>
 
     <div id="map"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/ol@v10.3.1/dist/ol.js"></script>
     <script>
-        // 1. 지도 생성 (브이월드 WMTS 타일 사용)
+        // 1. 지도 생성
         const map = new ol.Map({
             target: 'map',
             layers: [
                 new ol.layer.Tile({
                     source: new ol.source.XYZ({
-                        // 발급받으신 인증키가 적용된 URL입니다.
                         url: 'https://api.vworld.kr/req/wmts/1.0.0/DD9A7407-7BE7-303B-BA33-F6B756AA5C69/Base/{z}/{y}/{x}.png'
                     })
                 })
             ],
             view: new ol.View({
-                center: ol.proj.fromLonLat([127.0276, 37.4979]), // 서울 강남역 기준
+                center: ol.proj.fromLonLat([127.0276, 37.4979]),
                 zoom: 14
             })
         });
 
-        // 2. 검색 버튼 클릭 시 알림 기능
-        function searchAlert() {
+        // 2. 검색 함수 (JSONP 방식 적용)
+        function searchLocation() {
             const keyword = document.getElementById('keyword').value;
-            if (keyword.trim() === "") {
+            const apiKey = 'DD9A7407-7BE7-303B-BA33-F6B756AA5C69';
+
+            if (!keyword.trim()) {
                 alert('검색어를 입력해주세요.');
+                return;
+            }
+
+            // 기존 fetch 대신 JSONP 방식을 위해 스크립트 태그를 생성합니다.
+            const script = document.createElement('script');
+            
+            // resType을 jsonp로 설정하고, 데이터를 받을 콜백 함수명(vworldCallback)을 지정합니다.
+            // remoteAddress는 현재 접속 중인 origin 주소를 자동으로 할당합니다.
+            script.src = `https://api.vworld.kr/req/search?service=search&request=search&remoteAddress=${window.location.origin}&resType=jsonp&query=${encodeURIComponent(keyword)}&type=place&format=json&errorFormat=json&key=${apiKey}&callback=vworldCallback`;
+
+            // 스크립트 실행 후 태그 삭제 (정리 작업)
+            script.onerror = () => {
+                alert("API 호출 중 오류가 발생했습니다.");
+                script.remove();
+            };
+            
+            document.body.appendChild(script);
+            console.log("검색 요청을 보냈습니다: ", keyword);
+        }
+
+        // 3. 데이터를 받아 처리할 콜백 함수 (전역 영역에 있어야 함)
+        function vworldCallback(data) {
+            console.log("받은 데이터 전체:", data);
+
+            // 브이월드 API 2.0 버전은 data.response 안에 결과가 들어있습니다.
+            const response = data.response;
+
+            if (response && response.status === 'OK' && response.result && response.result.items.length > 0) {
+                const firstItem = response.result.items[0];
+                
+                // 위경도 값 추출 (문자열일 수 있으므로 parseFloat 사용)
+                const lon = parseFloat(firstItem.point.x);
+                const lat = parseFloat(firstItem.point.y);
+
+                console.log("이동할 좌표:", lon, lat);
+
+                const moveLocation = ol.proj.fromLonLat([lon, lat]);
+
+                // 지도 이동 애니메이션
+                map.getView().animate({
+                    center: moveLocation,
+                    duration: 1000,
+                    zoom: 16
+                });
+
+                // 성공 후 생성된 스크립트 태그들 정리 (선택 사항)
+                const scripts = document.querySelectorAll('script[src^="https://api.vworld.kr"]');
+                scripts.forEach(s => s.remove());
+                
             } else {
-                alert('기능 미구현');
-                console.log('입력한 키워드:', keyword);
+                console.log("검색 실패 상세:", response);
+                alert('검색 결과가 없습니다. (데이터 구조 확인 필요)');
             }
         }
     </script>
