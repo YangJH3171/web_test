@@ -3,99 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenLayers Map Search</title>
+    <title>웹페이지 서비스 테스트 ver.1.1</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v10.3.1/ol.css">
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-
-        /* 지도가 화면 전체를 채우도록 설정 */
-        #map {
-            width: 100%;
-            height: 100vh;
-        }
-
-        /* 검색창 컨테이너 (상단 중앙 정렬) */
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: 'Pretendard', sans-serif; }
+        #map { width: 100%; height: 100vh; }
+        
+        /* 검색창 컨테이너 */
         .search-container {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%); /* 정확한 중앙 정렬을 위한 설정 */
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            display: flex;
-            gap: 5px;
+            position: absolute; top: 20px; left: 20px;
+            z-index: 1000; width: 320px;
         }
+        
+        .search-box {
+            background: white; padding: 10px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2); display: flex; gap: 5px;
+        }
+        
+        .search-input { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; }
+        .search-button { padding: 8px 15px; background-color: #4A90E2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .search-button:hover { background-color: #357ABD; }
 
-        .search-input {
-            width: 250px; /* 중앙 배치를 위해 너비를 살짝 넓혔습니다 */
-            padding: 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            outline: none;
+        /* 검색 결과 리스트 스타일 */
+        #search-results {
+            margin-top: 5px; background: white; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            max-height: 400px; overflow-y: auto; display: none;
         }
-
-        .search-button {
-            padding: 8px 15px;
-            background-color: #4A90E2;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
+        
+        .result-item {
+            padding: 12px 15px; border-bottom: 1px solid #eee; cursor: pointer;
+            transition: background 0.2s;
         }
-
-        .search-button:hover {
-            background-color: #357ABD;
-        }
+        
+        .result-item:hover { background-color: #f8f9fa; }
+        .result-item:last-child { border-bottom: none; }
+        .result-title { font-weight: bold; color: #333; font-size: 14px; margin-bottom: 3px; }
+        .result-address { font-size: 12px; color: #666; }
     </style>
 </head>
 <body>
 
     <div class="search-container">
-        <input type="text" class="search-input" id="keyword" placeholder="장소 검색...">
-        <button class="search-button" onclick="searchAlert()">검색</button>
+        <div class="search-box">
+            <input type="text" class="search-input" id="keyword" placeholder="장소, 주소 검색..." onkeypress="if(event.keyCode==13) {searchLocation();}">
+            <button class="search-button" onclick="searchLocation()">검색</button>
+        </div>
+        <div id="search-results"></div>
     </div>
 
     <div id="map"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/ol@v10.3.1/dist/ol.js"></script>
     <script>
-        // 1. 지도 생성 (브이월드 WMTS 타일 사용)
+        // 1. 지도 초기화 (V-World WMTS)
+        const apiKey = 'DD9A7407-7BE7-303B-BA33-F6B756AA5C69';
+        
         const map = new ol.Map({
             target: 'map',
             layers: [
                 new ol.layer.Tile({
                     source: new ol.source.XYZ({
-                        // 발급받으신 인증키가 적용된 URL입니다.
-                        url: 'https://api.vworld.kr/req/wmts/1.0.0/DD9A7407-7BE7-303B-BA33-F6B756AA5C69/Base/{z}/{y}/{x}.png'
+                        url: `https://api.vworld.kr/req/wmts/1.0.0/${apiKey}/Base/{z}/{y}/{x}.png`
                     })
                 })
             ],
             view: new ol.View({
-                center: ol.proj.fromLonLat([127.0276, 37.4979]), // 서울 강남역 기준
+                center: ol.proj.fromLonLat([127.0276, 37.4979]), // 강남역 기준
                 zoom: 14
             })
         });
 
-        // 2. 검색 버튼 클릭 시 알림 기능
-        function searchAlert() {
+        // 2. 검색 실행 함수
+        function searchLocation() {
             const keyword = document.getElementById('keyword').value;
-            if (keyword.trim() === "") {
+            const resultsDiv = document.getElementById('search-results');
+
+            if (!keyword.trim()) {
                 alert('검색어를 입력해주세요.');
-            } else {
-                alert('기능 미구현');
-                console.log('입력한 키워드:', keyword);
+                return;
             }
+
+            // JSONP 호출을 위한 스크립트 생성
+            const script = document.createElement('script');
+            const url = `https://api.vworld.kr/req/search?service=search&request=search&remoteAddress=${window.location.origin}&resType=jsonp&query=${encodeURIComponent(keyword)}&type=place&format=json&errorFormat=json&key=${apiKey}&callback=vworldCallback`;
+            
+            script.src = url;
+            script.onerror = () => alert("API 호출에 실패했습니다.");
+            document.body.appendChild(script);
         }
+
+        // 3. 검색 결과 처리 콜백 (JSONP)
+        function vworldCallback(data) {
+            const resultsDiv = document.getElementById('search-results');
+            resultsDiv.innerHTML = ''; // 이전 결과 초기화
+
+            const response = data.response;
+
+            if (response && response.status === 'OK' && response.result && response.result.items.length > 0) {
+                resultsDiv.style.display = 'block';
+
+                response.result.items.forEach(item => {
+                    // 결과 아이템 엘리먼트 생성
+                    const itemEl = document.createElement('div');
+                    itemEl.className = 'result-item';
+                    
+                    const title = item.title;
+                    const addr = item.address.road || item.address.parcel;
+                    
+                    itemEl.innerHTML = `
+                        <div class="result-title">${title}</div>
+                        <div class="result-address">${addr}</div>
+                    `;
+
+                    // 리스트 아이템 클릭 시 지도 이동
+                    itemEl.onclick = () => {
+                        const lon = parseFloat(item.point.x);
+                        const lat = parseFloat(item.point.y);
+                        const targetPos = ol.proj.fromLonLat([lon, lat]);
+
+                        map.getView().animate({
+                            center: targetPos,
+                            zoom: 17,
+                            duration: 800
+                        });
+                        
+                        // 이동 후 리스트 숨기기
+                        resultsDiv.style.display = 'none';
+                        document.getElementById('keyword').value = title;
+                    };
+
+                    resultsDiv.appendChild(itemEl);
+                });
+            } else {
+                alert('검색 결과가 없습니다.');
+                resultsDiv.style.display = 'none';
+            }
+
+            // 사용 완료된 스크립트 태그 정리
+            const scripts = document.querySelectorAll('script[src^="https://api.vworld.kr"]');
+            scripts.forEach(s => s.remove());
+        }
+
+        // 지도 클릭 시 검색 결과창 닫기
+        map.on('click', () => {
+            document.getElementById('search-results').style.display = 'none';
+        });
     </script>
 </body>
 </html>
